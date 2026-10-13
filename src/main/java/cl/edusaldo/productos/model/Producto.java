@@ -129,6 +129,7 @@ public class Producto {
     }
 
     public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
     public Categoria getCategoria() { return categoria; }
     public String getSku() { return sku; }
     public String getCodigoBarras() { return codigoBarras; }

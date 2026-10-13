@@ -73,6 +73,7 @@ public class SolicitudAjusteStock {
     }
 
     public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
     public Producto getProducto() { return producto; }
     public int getCantidad() { return cantidad; }
     public String getMotivo() { return motivo; }
