@@ -52,17 +52,17 @@ public class InventarioController {
 
     @PostMapping("/ajustes/solicitar")
     @Operation(summary = "Crear solicitud de ajuste de stock (Admin)")
-    public ResponseEntity<SolicitudAjusteStock> solicitarAjuste(@Valid @RequestBody SolicitarAjusteDTO dto) {
+    public ResponseEntity<SolicitudAjusteResponseDTO> solicitarAjuste(@Valid @RequestBody SolicitarAjusteDTO dto) {
         SolicitudAjusteStock sol = inventarioService.solicitarAjuste(dto);
-        return ResponseEntity.status(HttpStatus.CREATED).body(sol);
+        return ResponseEntity.status(HttpStatus.CREATED).body(new SolicitudAjusteResponseDTO(sol));
     }
 
     @PutMapping("/ajustes/{solicitudId}/autorizar")
     @Operation(summary = "Aprobar o rechazar ajuste de stock (Autorizador - Segunda firma)")
-    public ResponseEntity<SolicitudAjusteStock> autorizarAjuste(
+    public ResponseEntity<SolicitudAjusteResponseDTO> autorizarAjuste(
             @PathVariable Long solicitudId,
             @Valid @RequestBody AprobarAjusteDTO dto) {
         SolicitudAjusteStock sol = inventarioService.autorizarAjuste(solicitudId, dto);
-        return ResponseEntity.ok(sol);
+        return ResponseEntity.ok(new SolicitudAjusteResponseDTO(sol));
     }
 }
