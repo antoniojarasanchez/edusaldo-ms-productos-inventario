@@ -5,7 +5,7 @@ spring:
   application:
     name: ms-productos-inventario
   datasource:
-    url: jdbc:mysql://localhost:3306/db_productos_inventario?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+    url: jdbc:mysql://localhost:3306/db_productos_inventario?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
     username: root
     password: ""
   jpa:
