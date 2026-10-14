@@ -1,8 +1,7 @@
 @startuml 03_ms_productos_inventario
-title EduSaldo · MS Productos e Inventario (8083) · db_productos_inventario\nHU24–HU26, HU38–HU45, HU51–HU52, HU60
 skinparam classAttributeIconSize 0
 skinparam shadowing false
-skinparam linetype ortho
+skinparam linetype polyline
 skinparam class {
   BackgroundColor #FFFFFF
   BorderColor #1F4E79
@@ -13,139 +12,130 @@ skinparam package {
   BackgroundColor #EEF4FA
 }
 hide empty members
+title EduSaldo · MS Productos e Inventario (8083) · db_inventario\nCatálogo, ingreso manual de stock y ajustes
+
+legend top right
+  «ADM» Administrador · «ENC» Encargado · «APO» Apoderado
+  «ALU» Alumno (≥ 12 años) · «SIS» sistema / otro microservicio
+endlegend
 
 package "MS Productos e Inventario" {
+
   enum EstadoRegistro {
     ACTIVO
     INACTIVO
   }
 
   enum TipoMovimientoInventario {
-    ENTRADA_COMPRA
+    INGRESO
     RESERVA
     LIBERACION
-    SALIDA_VENTA
+    ENTREGA
     DEVOLUCION
-    AJUSTE_POSITIVO
-    AJUSTE_NEGATIVO
+    AJUSTE
   }
 
-  enum EstadoAutorizacion {
+  enum EstadoSolicitud {
     PENDIENTE
     APROBADA
     RECHAZADA
   }
 
-  enum EstadoReporte {
-    PENDIENTE
-    ATENDIDO
-    DESCARTADO
-  }
-
-  enum EstadoInventario {
-    EN_CURSO
-    FINALIZADO
-  }
-
   class Categoria <<Entity>> {
     - id : Long
     - nombre : String {unique}
-    - descripcion : String
     - estado : EstadoRegistro
     --
-    + activar() : void
-    + inactivar() : void
+    + crear(...) : void «ADM»
+    + inactivar() : void «ADM»
   }
 
   class Producto <<Entity>> {
     - id : Long
     - sku : String {unique}
-    - codigoBarras : String
     - nombre : String
     - descripcion : String
     - imagenUrl : String
     - cursoNivel : String
-    - materia : String
     - precioVenta : int
-    - margenUtilidad : BigDecimal
-    - cpp : Long
     - stockFisico : int
     - stockReservado : int
     - stockCritico : int
     - estado : EstadoRegistro
     --
-    + getStockDisponible() : int
-    + esCritico() : boolean
-    + reservar(cant : int) : void
-    + liberar(cant : int) : void
-    + descontar(cant : int) : void
-    + reponer(cant : int) : void
-    + registrarEntrada(cant : int, costoConIva : Long) : void
-    + ajustarStock(cant : int) : void
-    + calcularPrecioSugerido() : int
-    + valorStockCosto() : Long
-    + valorStockVenta() : Long
+    + getStockDisponible() : int «APO» «ALU» «ENC»
+    + esCritico() : boolean «ADM» «ENC»
+    + reservar(cant : int) : void «SIS»
+    + liberar(cant : int) : void «SIS»
+    + descontar(cant : int) : void «SIS»
+    + reponer(cant : int) : void «SIS»
+    + editar(...) : void «ADM»
+    + inactivar() : void «ADM»
+  }
+
+  class Proveedor <<Entity>> {
+    - id : Long
+    - rut : String {unique}
+    - razonSocial : String
+    - contactoPrimerNombre : String
+    - contactoPrimerApellido : String
+    - correo : String
+    - telefono : String
+    - estado : EstadoRegistro
+    --
+    + crear(...) : void «ADM»
+    + inactivar() : void «ADM»
+  }
+
+  class IngresoStock <<Entity>> {
+    - id : Long
+    - fecha : LocalDateTime
+    - encargadoId : Long
+    - documentoReferencia : String [0..1]
+    - observacion : String [0..1]
+    --
+    + agregarDetalle(producto : Producto, cantidad : int) : void «ENC»
+    + confirmar() : void «ENC»
+  }
+
+  class DetalleIngresoStock <<Entity>> {
+    - id : Long
+    - cantidad : int
+    - costoUnitario : int [0..1]
   }
 
   class MovimientoInventario <<Entity>> {
     - id : Long
     - tipo : TipoMovimientoInventario
     - cantidad : int
-    - costoUnitario : Long
-    - stockFisicoResultante : int
-    - stockReservadoResultante : int
-    - cppResultante : Long
+    - stockResultante : int
     - fecha : LocalDateTime
-    - referenciaTipo : String
-    - referenciaId : Long
-    - idempotencyKey : String {unique}
-    - usuarioId : Long <<ref MS Auth>>
+    - referenciaId : Long [0..1]
+    - usuarioId : Long
   }
 
   class SolicitudAjusteStock <<Entity>> {
     - id : Long
     - cantidad : int
     - motivo : String
-    - evidenciaUrl : String
-    - solicitanteId : Long <<ref MS Auth>>
-    - autorizadorId : Long [0..1] <<ref MS Auth>>
-    - estado : EstadoAutorizacion
+    - solicitanteId : Long
+    - estado : EstadoSolicitud
     - fechaSolicitud : LocalDateTime
+    - aprobadorId : Long [0..1]
     - fechaResolucion : LocalDateTime [0..1]
-    - comentarioResolucion : String [0..1]
-    - reporteDiferenciaId : Long [0..1]
     --
-    + aprobar(autorizadorId : Long) : MovimientoInventario
-    + rechazar(autorizadorId : Long, comentario : String) : void
-  }
-
-  class ReporteDiferenciaStock <<Entity>> {
-    - id : Long
-    - cantidadDiferencia : int
-    - descripcion : String
-    - evidenciaUrl : String
-    - reportadoPorId : Long <<ref MS Auth>>
-    - fechaReporte : LocalDateTime
-    - estado : EstadoReporte
-    - atendidoPorId : Long [0..1] <<ref MS Auth>>
-    - observacion : String [0..1]
-    --
-    + generarSolicitud(adminId : Long, motivo : String) : SolicitudAjusteStock
-    + descartar(adminId : Long, motivo : String) : void
+    + solicitar(...) : void «ENC»
+    + aprobar(adminId : Long) : MovimientoInventario «ADM»
+    + rechazar(adminId : Long, motivo : String) : void «ADM»
   }
 
   class InventarioFisico <<Entity>> {
     - id : Long
-    - fechaConteo : LocalDate
-    - fechaRegistro : LocalDateTime
-    - responsableId : Long <<ref MS Auth>>
-    - categoriaFiltro : String [0..1]
-    - observaciones : String
-    - respaldoUrl : String
-    - estado : EstadoInventario
+    - fecha : LocalDate
+    - encargadoId : Long
     --
-    + agregarDetalle(productoId : Long, stockContado : int) : DetalleConteo
-    + finalizar() : List<ReporteDiferenciaStock>
+    + registrarConteo(producto : Producto, contado : int) : void «ENC»
+    + finalizar() : List<SolicitudAjusteStock> «ENC»
   }
 
   class DetalleConteo <<Entity>> {
@@ -154,48 +144,36 @@ package "MS Productos e Inventario" {
     - stockContado : int
     --
     + getDiferencia() : int
-    + tieneDiferencia() : boolean
-    + generarReporteDiferencia(responsableId : Long, observacion : String) : ReporteDiferenciaStock
   }
 }
 
 Categoria "1" -- "0..*" Producto : clasifica >
+Proveedor "0..1" -- "0..*" IngresoStock : abastece >
+IngresoStock "1" *-- "1..*" DetalleIngresoStock
+DetalleIngresoStock "0..*" --> "1" Producto
 Producto "1" *-- "0..*" MovimientoInventario : historial >
-Producto "1" -- "0..*" SolicitudAjusteStock : objeto de >
-SolicitudAjusteStock "1" --> "0..1" MovimientoInventario : genera al aprobarse >
-InventarioFisico "1" *-- "1..*" DetalleConteo : contiene >
-DetalleConteo "0..*" --> "1" Producto : cuenta >
-DetalleConteo "1" --> "0..1" ReporteDiferenciaStock : origina >
-ReporteDiferenciaStock "0..*" --> "1" Producto : refiere a >
-ReporteDiferenciaStock "1" --> "0..1" SolicitudAjusteStock : se atiende con >
+IngresoStock "1" ..> "1..*" MovimientoInventario : genera INGRESO >
+Producto "1" -- "0..*" SolicitudAjusteStock
+SolicitudAjusteStock "1" ..> "0..1" MovimientoInventario : genera AJUSTE >
+InventarioFisico "1" *-- "1..*" DetalleConteo
+DetalleConteo "0..*" --> "1" Producto
+DetalleConteo "1" ..> "0..1" SolicitudAjusteStock : diferencia origina >
 
-note right of Producto
-  Invariante de Stock (HU41):
-  stockDisponible = stockFisico − stockReservado >= 0
-  Ninguna operación permite stock físico o disponible negativo.
-  CPP con costo total IVA incluido (HU51):
-  (el Centro no usa IVA como crédito fiscal)
-  cpp = (stock·cpp + cant·costoConIva) / (stock + cant)
-  Precio sugerido = cpp · (1 + margenUtilidad / 100) (HU52).
-  Stock crítico: stockDisponible <= stockCritico (HU42).
-  Recepción de compra (MS 05) invoca registrarEntrada().
+note right of IngresoStock
+  Reemplaza a MS Compras: el Encargado registra
+  a mano el stock que llegó (cabecera + detalle,
+  varios productos a la vez). Sin órdenes de compra,
+  facturas ni pagos. Proveedor y costo son opcionales.
 end note
 
-note bottom of SolicitudAjusteStock
-  HU45 – tres roles (doble firma):
-  1. ENCARGADO reporta la diferencia (ReporteDiferenciaStock,
-     manual o desde inventario físico).
-  2. ADMINISTRADOR revisa y crea la solicitud de ajuste.
-  3. AUTORIZADOR aprueba o rechaza (segunda firma).
-  Solo con la aprobación cambia el stock (producto.ajustarStock())
-  y se genera el MovimientoInventario correspondiente.
+note right of SolicitudAjusteStock
+  Ajuste: el Encargado lo solicita y el
+  Administrador lo aprueba o rechaza.
+  Solo con la aprobación cambia el stock.
 end note
 
-note bottom of InventarioFisico
-  HU44: Conteo físico comparado contra stock registrado del sistema.
-  Conserva respaldo fotográfico y observaciones (HU44 CA2).
-  Al finalizar la jornada, las diferencias detectadas NO modifican
-  directamente el stock: generan ReporteDiferenciaStock para ser
-  canalizadas por el flujo de doble firma (HU45).
+note bottom of Producto
+  stockDisponible = stockFisico − stockReservado ≥ 0.
+  Crítico: stockDisponible ≤ stockCritico.
 end note
 @enduml
