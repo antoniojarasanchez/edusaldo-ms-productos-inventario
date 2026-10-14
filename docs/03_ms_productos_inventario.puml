@@ -41,56 +41,43 @@ package "MS Productos e Inventario" {
     RECHAZADA
   }
 
-  class Categoria <<Entity>> {
-    - id : Long
-    - nombre : String {unique}
+  class Categoria {
+    - nombre : String
     - estado : EstadoRegistro
     --
-    + crear(...) : void «ADM»
+    + crear(nombre : String) : void «ADM»
+    + editar(nombre : String) : void «ADM»
     + inactivar() : void «ADM»
   }
 
-  class Producto <<Entity>> {
-    - id : Long
-    - sku : String {unique}
+  class Producto {
+    - sku : String
     - nombre : String
     - descripcion : String
     - imagenUrl : String
     - cursoNivel : String
-    - precioVenta : int
+    - precio : int
     - stockFisico : int
     - stockReservado : int
     - stockCritico : int
     - estado : EstadoRegistro
     --
-    + getStockDisponible() : int «APO» «ALU» «ENC»
+    + getStockDisponible() : int «APO» «ALU» «ENC» «ADM»
     + esCritico() : boolean «ADM» «ENC»
-    + reservar(cant : int) : void «SIS»
-    + liberar(cant : int) : void «SIS»
-    + descontar(cant : int) : void «SIS»
-    + reponer(cant : int) : void «SIS»
+    + ingresarStockManual(cant : int, ingresoId : Long, usuarioId : Long) : MovimientoInventario «SIS»
+    + retenerStockPorReserva(cant : int, reservaId : Long, usuarioId : Long) : MovimientoInventario «SIS»
+    + liberarStockRetenido(cant : int, reservaId : Long, usuarioId : Long) : MovimientoInventario «SIS»
+    + descontarStockPorEntrega(cant : int, entregaId : Long, vieneDeReserva : boolean, usuarioId : Long) : MovimientoInventario «SIS»
+    + reponerStockPorDevolucion(cant : int, devolucionId : Long, usuarioId : Long) : MovimientoInventario «SIS»
+    + aplicarAjusteAprobado(cant : int, solicitudId : Long, adminId : Long) : MovimientoInventario «SIS»
     + editar(...) : void «ADM»
     + inactivar() : void «ADM»
   }
 
-  class Proveedor <<Entity>> {
-    - id : Long
-    - rut : String {unique}
-    - razonSocial : String
-    - contactoPrimerNombre : String
-    - contactoPrimerApellido : String
-    - correo : String
-    - telefono : String
-    - estado : EstadoRegistro
-    --
-    + crear(...) : void «ADM»
-    + inactivar() : void «ADM»
-  }
-
-  class IngresoStock <<Entity>> {
-    - id : Long
+  class IngresoStock {
     - fecha : LocalDateTime
     - encargadoId : Long
+    - proveedor : String [0..1]
     - documentoReferencia : String [0..1]
     - observacion : String [0..1]
     --
@@ -98,24 +85,11 @@ package "MS Productos e Inventario" {
     + confirmar() : void «ENC»
   }
 
-  class DetalleIngresoStock <<Entity>> {
-    - id : Long
+  class DetalleIngresoStock {
     - cantidad : int
-    - costoUnitario : int [0..1]
   }
 
-  class MovimientoInventario <<Entity>> {
-    - id : Long
-    - tipo : TipoMovimientoInventario
-    - cantidad : int
-    - stockResultante : int
-    - fecha : LocalDateTime
-    - referenciaId : Long [0..1]
-    - usuarioId : Long
-  }
-
-  class SolicitudAjusteStock <<Entity>> {
-    - id : Long
+  class SolicitudAjusteStock {
     - cantidad : int
     - motivo : String
     - solicitanteId : Long
@@ -123,57 +97,63 @@ package "MS Productos e Inventario" {
     - fechaSolicitud : LocalDateTime
     - aprobadorId : Long [0..1]
     - fechaResolucion : LocalDateTime [0..1]
+    - motivoRechazo : String [0..1]
     --
-    + solicitar(...) : void «ENC»
+    + solicitar(producto : Producto, cantidad : int, motivo : String) : void «ENC»
     + aprobar(adminId : Long) : MovimientoInventario «ADM»
-    + rechazar(adminId : Long, motivo : String) : void «ADM»
+    + rechazar(adminId : Long, motivoRechazo : String) : void «ADM»
   }
 
-  class InventarioFisico <<Entity>> {
-    - id : Long
-    - fecha : LocalDate
-    - encargadoId : Long
-    --
-    + registrarConteo(producto : Producto, contado : int) : void «ENC»
-    + finalizar() : List<SolicitudAjusteStock> «ENC»
-  }
-
-  class DetalleConteo <<Entity>> {
-    - id : Long
-    - stockSistema : int
-    - stockContado : int
-    --
-    + getDiferencia() : int
+  class MovimientoInventario {
+    - tipo : TipoMovimientoInventario
+    - cantidad : int
+    - stockResultante : int
+    - fecha : LocalDateTime
+    - referenciaId : Long [0..1]
+    - usuarioId : Long
   }
 }
 
+' Relaciones de dominio internas
 Categoria "1" -- "0..*" Producto : clasifica >
-Proveedor "0..1" -- "0..*" IngresoStock : abastece >
-IngresoStock "1" *-- "1..*" DetalleIngresoStock
-DetalleIngresoStock "0..*" --> "1" Producto
-Producto "1" *-- "0..*" MovimientoInventario : historial >
-IngresoStock "1" ..> "1..*" MovimientoInventario : genera INGRESO >
-Producto "1" -- "0..*" SolicitudAjusteStock
-SolicitudAjusteStock "1" ..> "0..1" MovimientoInventario : genera AJUSTE >
-InventarioFisico "1" *-- "1..*" DetalleConteo
-DetalleConteo "0..*" --> "1" Producto
-DetalleConteo "1" ..> "0..1" SolicitudAjusteStock : diferencia origina >
+IngresoStock "1" *-- "1..*" DetalleIngresoStock : contiene >
+DetalleIngresoStock "0..*" --> "1" Producto : abastece >
+IngresoStock "0..*" ..> "1..*" Producto : 1. al confirmar incrementa en >
+Producto "1" -- "0..*" SolicitudAjusteStock : sujeto a >
+Producto "1" *-- "0..*" MovimientoInventario : 2. registra cada operación en >
+
+' Conexión de Enums con sus Clases
+Categoria ..> EstadoRegistro : estado
+Producto ..> EstadoRegistro : estado
+Producto ..> TipoMovimientoInventario : genera >
+MovimientoInventario ..> TipoMovimientoInventario : tipo
+SolicitudAjusteStock ..> EstadoSolicitud : estado
 
 note right of IngresoStock
   Reemplaza a MS Compras: el Encargado registra
-  a mano el stock que llegó (cabecera + detalle,
-  varios productos a la vez). Sin órdenes de compra,
-  facturas ni pagos. Proveedor y costo son opcionales.
+  manualmente el stock que llega a la librería
+  (uno o varios productos a la vez).
+  El proveedor y el documento de referencia son
+  textos libres opcionales. Sin facturas ni CPP.
 end note
 
 note right of SolicitudAjusteStock
-  Ajuste: el Encargado lo solicita y el
-  Administrador lo aprueba o rechaza.
-  Solo con la aprobación cambia el stock.
+  Ajuste por diferencia de conteo físico:
+  el Encargado solicita el ajuste indicando la
+  diferencia y el motivo; el Administrador lo
+  aprueba o rechaza. Solo al aprobarse se invoca
+  Producto.aplicarAjusteAprobado().
 end note
 
 note bottom of Producto
-  stockDisponible = stockFisico − stockReservado ≥ 0.
-  Crítico: stockDisponible ≤ stockCritico.
+  • stockDisponible = stockFisico − stockReservado ≥ 0.
+  • Crítico: stockDisponible ≤ stockCritico.
+  • Único punto de generación de MovimientoInventario (6 tipos):
+    - INGRESO: ingresarStockManual()
+    - RESERVA: retenerStockPorReserva()
+    - LIBERACION: liberarStockRetenido()
+    - ENTREGA: descontarStockPorEntrega()
+    - DEVOLUCION: reponerStockPorDevolucion()
+    - AJUSTE: aplicarAjusteAprobado()
 end note
 @enduml
