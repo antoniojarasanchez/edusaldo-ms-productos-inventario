@@ -12,12 +12,27 @@ skinparam package {
   BackgroundColor #EEF4FA
 }
 hide empty members
+skinparam nodesep 45
+skinparam ranksep 55
 title EduSaldo · MS Productos e Inventario (8083) · db_inventario\nCatálogo, ingreso manual de stock y ajustes
 
 legend top right
   «ADM» Administrador · «ENC» Encargado · «APO» Apoderado
   «ALU» Alumno (≥ 12 años) · «SIS» sistema / otro microservicio
+  Clases <<ref MS Usuarios>>: viven en MS Usuarios; aquí solo
+  se guarda su id (sin relación JPA entre bases de datos).
 endlegend
+
+package "MS Usuarios y Auth (referencia)" #F7F7F7 {
+  class Encargado <<ref MS Usuarios>> {
+    - id : Long
+    - correo : String
+  }
+  class Administrador <<ref MS Usuarios>> {
+    - id : Long
+    - correo : String
+  }
+}
 
 package "MS Productos e Inventario" {
 
@@ -92,10 +107,10 @@ package "MS Productos e Inventario" {
   class SolicitudAjusteStock {
     - cantidad : int
     - motivo : String
-    - solicitanteId : Long
+    - encargadoId : Long
     - estado : EstadoSolicitud
     - fechaSolicitud : LocalDateTime
-    - aprobadorId : Long [0..1]
+    - administradorId : Long [0..1]
     - fechaResolucion : LocalDateTime [0..1]
     - motivoRechazo : String [0..1]
     --
@@ -121,6 +136,11 @@ DetalleIngresoStock "0..*" --> "1" Producto : abastece >
 IngresoStock "0..*" ..> "1..*" Producto : 1. al confirmar incrementa en >
 Producto "1" -- "0..*" SolicitudAjusteStock : sujeto a >
 Producto "1" *-- "0..*" MovimientoInventario : 2. registra cada operación en >
+
+' Referencias externas (hacia MS Usuarios por ID)
+IngresoStock "0..*" ..> "1" Encargado : recepcionado por (encargadoId) >
+SolicitudAjusteStock "0..*" ..> "1" Encargado : solicitada por (encargadoId) >
+SolicitudAjusteStock "0..*" ..> "0..1" Administrador : resuelta por (administradorId) >
 
 ' Conexión de Enums con sus Clases
 Categoria ..> EstadoRegistro : estado
