@@ -1,13 +1,13 @@
 -- =============================================================================
 -- EduSaldo · MS Productos e Inventario (Puerto 8083)
--- Base de Datos: db_productos_inventario · Arquitectura 2.0
+-- Base de Datos: db_inventario · Arquitectura 2.0
 -- =============================================================================
 
-CREATE DATABASE IF NOT EXISTS db_productos_inventario 
+CREATE DATABASE IF NOT EXISTS db_inventario 
   DEFAULT CHARACTER SET utf8mb4 
   DEFAULT COLLATE utf8mb4_unicode_ci;
 
-USE db_productos_inventario;
+USE db_inventario;
 
 -- Tabla: categorias
 CREATE TABLE IF NOT EXISTS categorias (
