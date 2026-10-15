@@ -1,5 +1,6 @@
 package cl.edusaldo.productos.controller;
 
+import cl.edusaldo.productos.dto.ActualizarProductoDTO;
 import cl.edusaldo.productos.dto.CrearProductoDTO;
 import cl.edusaldo.productos.dto.ProductoResponseDTO;
 import cl.edusaldo.productos.model.Producto;
@@ -16,7 +17,7 @@ import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/productos")
-@Tag(name = "Productos", description = "Catálogo escolar, precios y maestros de artículos")
+@Tag(name = "Productos", description = "Catálogo escolar, existencias y maestros de artículos")
 public class ProductoController {
 
     private final ProductoService productoService;
@@ -40,11 +41,29 @@ public class ProductoController {
     }
 
     @GetMapping
-    @Operation(summary = "Listar catálogo completo de productos")
-    public ResponseEntity<List<ProductoResponseDTO>> listarTodos() {
-        List<ProductoResponseDTO> list = productoService.listarTodos().stream()
+    @Operation(summary = "Listar catálogo de productos")
+    public ResponseEntity<List<ProductoResponseDTO>> listarTodos(
+            @RequestParam(required = false) Long categoriaId,
+            @RequestParam(required = false) Boolean soloActivos) {
+        List<ProductoResponseDTO> list = productoService.listarTodos(categoriaId, soloActivos).stream()
                 .map(ProductoResponseDTO::new)
                 .collect(Collectors.toList());
         return ResponseEntity.ok(list);
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Actualizar datos de un producto")
+    public ResponseEntity<ProductoResponseDTO> actualizar(
+            @PathVariable Long id,
+            @Valid @RequestBody ActualizarProductoDTO dto) {
+        Producto p = productoService.actualizarProducto(id, dto);
+        return ResponseEntity.ok(new ProductoResponseDTO(p));
+    }
+
+    @DeleteMapping("/{id}")
+    @Operation(summary = "Inactivar producto")
+    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
+        productoService.inactivarProducto(id);
+        return ResponseEntity.noContent().build();
     }
 }

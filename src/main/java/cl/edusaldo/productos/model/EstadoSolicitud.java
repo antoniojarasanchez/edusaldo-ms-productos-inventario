@@ -1,6 +1,6 @@
 package cl.edusaldo.productos.model;
 
-public enum EstadoAutorizacion {
+public enum EstadoSolicitud {
     PENDIENTE,
     APROBADA,
     RECHAZADA

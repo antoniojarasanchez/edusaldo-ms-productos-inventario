@@ -1,11 +1,10 @@
 package cl.edusaldo.productos.model;
 
 public enum TipoMovimientoInventario {
-    ENTRADA_COMPRA,
+    INGRESO,
     RESERVA,
     LIBERACION,
-    SALIDA_VENTA,
+    ENTREGA,
     DEVOLUCION,
-    AJUSTE_POSITIVO,
-    AJUSTE_NEGATIVO
+    AJUSTE
 }

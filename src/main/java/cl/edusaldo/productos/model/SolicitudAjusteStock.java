@@ -16,73 +16,82 @@ public class SolicitudAjusteStock {
     private Producto producto;
 
     @Column(name = "cantidad", nullable = false)
-    private int cantidad; // positivo (sobrante) o negativo (merma/pérdida)
+    private int cantidad;
 
-    @Column(name = "motivo", nullable = false)
+    @Column(name = "motivo", nullable = false, length = 500)
     private String motivo;
 
-    @Column(name = "evidencia_url")
-    private String evidenciaUrl;
-
-    @Column(name = "solicitante_id", nullable = false)
-    private Long solicitanteId; // Administrador
-
-    @Column(name = "autorizador_id")
-    private Long autorizadorId; // Autorizador (segunda firma)
+    @Column(name = "encargado_id", nullable = false)
+    private Long encargadoId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "estado", nullable = false, length = 30)
-    private EstadoAutorizacion estado = EstadoAutorizacion.PENDIENTE;
+    private EstadoSolicitud estado = EstadoSolicitud.PENDIENTE;
 
     @Column(name = "fecha_solicitud", nullable = false)
     private LocalDateTime fechaSolicitud = LocalDateTime.now();
 
+    @Column(name = "administrador_id")
+    private Long administradorId;
+
     @Column(name = "fecha_resolucion")
     private LocalDateTime fechaResolucion;
 
-    @Column(name = "comentario_resolucion")
-    private String comentarioResolucion;
-
-    @Column(name = "reporte_diferencia_id")
-    private Long reporteDiferenciaId;
+    @Column(name = "motivo_rechazo", length = 500)
+    private String motivoRechazo;
 
     public SolicitudAjusteStock() {}
 
-    public SolicitudAjusteStock(Producto producto, int cantidad, String motivo, String evidenciaUrl, Long solicitanteId, Long reporteDiferenciaId) {
+    public SolicitudAjusteStock(Producto producto, int cantidad, String motivo, Long encargadoId) {
         this.producto = producto;
         this.cantidad = cantidad;
         this.motivo = motivo;
-        this.evidenciaUrl = evidenciaUrl;
-        this.solicitanteId = solicitanteId;
-        this.reporteDiferenciaId = reporteDiferenciaId;
-        this.estado = EstadoAutorizacion.PENDIENTE;
+        this.encargadoId = encargadoId;
+        this.estado = EstadoSolicitud.PENDIENTE;
         this.fechaSolicitud = LocalDateTime.now();
     }
 
-    public void aprobar(Long autorizadorId) {
-        this.estado = EstadoAutorizacion.APROBADA;
-        this.autorizadorId = autorizadorId;
+    public void aprobar(Long adminId) {
+        if (this.estado != EstadoSolicitud.PENDIENTE) {
+            throw new IllegalStateException("Solo se pueden aprobar solicitudes en estado PENDIENTE.");
+        }
+        this.estado = EstadoSolicitud.APROBADA;
+        this.administradorId = adminId;
         this.fechaResolucion = LocalDateTime.now();
     }
 
-    public void rechazar(Long autorizadorId, String comentario) {
-        this.estado = EstadoAutorizacion.RECHAZADA;
-        this.autorizadorId = autorizadorId;
-        this.comentarioResolucion = comentario;
+    public void rechazar(Long adminId, String motivoRechazo) {
+        if (this.estado != EstadoSolicitud.PENDIENTE) {
+            throw new IllegalStateException("Solo se pueden rechazar solicitudes en estado PENDIENTE.");
+        }
+        this.estado = EstadoSolicitud.RECHAZADA;
+        this.administradorId = adminId;
+        this.motivoRechazo = motivoRechazo;
         this.fechaResolucion = LocalDateTime.now();
     }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Producto getProducto() { return producto; }
+    public void setProducto(Producto producto) { this.producto = producto; }
     public int getCantidad() { return cantidad; }
+    public void setCantidad(int cantidad) { this.cantidad = cantidad; }
     public String getMotivo() { return motivo; }
-    public String getEvidenciaUrl() { return evidenciaUrl; }
-    public Long getSolicitanteId() { return solicitanteId; }
-    public Long getAutorizadorId() { return autorizadorId; }
-    public EstadoAutorizacion getEstado() { return estado; }
+    public void setMotivo(String motivo) { this.motivo = motivo; }
+    public Long getEncargadoId() { return encargadoId; }
+    public void setEncargadoId(Long encargadoId) { this.encargadoId = encargadoId; }
+    public EstadoSolicitud getEstado() { return estado; }
+    public void setEstado(EstadoSolicitud estado) { this.estado = estado; }
     public LocalDateTime getFechaSolicitud() { return fechaSolicitud; }
+    public void setFechaSolicitud(LocalDateTime fechaSolicitud) { this.fechaSolicitud = fechaSolicitud; }
+    public Long getAdministradorId() { return administradorId; }
+    public void setAdministradorId(Long administradorId) { this.administradorId = administradorId; }
     public LocalDateTime getFechaResolucion() { return fechaResolucion; }
-    public String getComentarioResolucion() { return comentarioResolucion; }
-    public Long getReporteDiferenciaId() { return reporteDiferenciaId; }
+    public void setFechaResolucion(LocalDateTime fechaResolucion) { this.fechaResolucion = fechaResolucion; }
+    public String getMotivoRechazo() { return motivoRechazo; }
+    public void setMotivoRechazo(String motivoRechazo) { this.motivoRechazo = motivoRechazo; }
+
+    public Long getProductoId() {
+        return producto != null ? producto.getId() : null;
+    }
 }

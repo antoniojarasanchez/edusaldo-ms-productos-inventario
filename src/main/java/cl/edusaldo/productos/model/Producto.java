@@ -1,7 +1,7 @@
 package cl.edusaldo.productos.model;
 
 import jakarta.persistence.*;
-import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "productos")
@@ -18,9 +18,6 @@ public class Producto {
     @Column(name = "sku", nullable = false, unique = true, length = 50)
     private String sku;
 
-    @Column(name = "codigo_barras", nullable = false, length = 50)
-    private String codigoBarras;
-
     @Column(name = "nombre", nullable = false, length = 150)
     private String nombre;
 
@@ -33,17 +30,8 @@ public class Producto {
     @Column(name = "curso_nivel", nullable = false, length = 100)
     private String cursoNivel;
 
-    @Column(name = "materia", nullable = false, length = 100)
-    private String materia;
-
-    @Column(name = "precio_venta", nullable = false)
-    private Long precioVenta;
-
-    @Column(name = "margen_utilidad", nullable = false, precision = 5, scale = 2)
-    private BigDecimal margenUtilidad = new BigDecimal("30.00");
-
-    @Column(name = "cpp", nullable = false)
-    private Long cpp; // Costo Promedio Ponderado con IVA incluido (Long)
+    @Column(name = "precio", nullable = false)
+    private int precio;
 
     @Column(name = "stock_fisico", nullable = false)
     private int stockFisico = 0;
@@ -60,17 +48,16 @@ public class Producto {
 
     public Producto() {}
 
-    public Producto(Categoria categoria, String sku, String codigoBarras, String nombre,
-                    String cursoNivel, String materia, Long precioVenta, Long cpp, int stockInicial, int stockCritico) {
+    public Producto(Categoria categoria, String sku, String nombre, String descripcion,
+                    String imagenUrl, String cursoNivel, int precio, int stockFisico, int stockCritico) {
         this.categoria = categoria;
         this.sku = sku;
-        this.codigoBarras = codigoBarras;
         this.nombre = nombre;
+        this.descripcion = descripcion;
+        this.imagenUrl = imagenUrl;
         this.cursoNivel = cursoNivel;
-        this.materia = materia;
-        this.precioVenta = precioVenta;
-        this.cpp = cpp;
-        this.stockFisico = stockInicial;
+        this.precio = precio;
+        this.stockFisico = stockFisico;
         this.stockReservado = 0;
         this.stockCritico = stockCritico;
         this.estado = EstadoRegistro.ACTIVO;
@@ -84,68 +71,163 @@ public class Producto {
         return getStockDisponible() <= this.stockCritico;
     }
 
-    // Invariante de reserva: no permite sobreventa
-    public void reservar(int cant) {
+    public MovimientoInventario ingresarStockManual(int cant, Long ingresoId, Long usuarioId) {
+        if (cant <= 0) {
+            throw new IllegalArgumentException("La cantidad a ingresar debe ser mayor a cero.");
+        }
+        this.stockFisico += cant;
+        return new MovimientoInventario(
+                this,
+                TipoMovimientoInventario.INGRESO,
+                cant,
+                this.stockFisico,
+                LocalDateTime.now(),
+                ingresoId,
+                usuarioId
+        );
+    }
+
+    public MovimientoInventario retenerStockPorReserva(int cant, Long reservaId, Long usuarioId) {
+        if (cant <= 0) {
+            throw new IllegalArgumentException("La cantidad a retener debe ser mayor a cero.");
+        }
         if (cant > getStockDisponible()) {
             throw new IllegalStateException("Stock insuficiente para reservar " + cant + " unidades. Disponible: " + getStockDisponible());
         }
         this.stockReservado += cant;
+        return new MovimientoInventario(
+                this,
+                TipoMovimientoInventario.RESERVA,
+                cant,
+                getStockDisponible(),
+                LocalDateTime.now(),
+                reservaId,
+                usuarioId
+        );
     }
 
-    public void liberar(int cant) {
+    public MovimientoInventario liberarStockRetenido(int cant, Long reservaId, Long usuarioId) {
+        if (cant <= 0) {
+            throw new IllegalArgumentException("La cantidad a liberar debe ser mayor a cero.");
+        }
         this.stockReservado = Math.max(0, this.stockReservado - cant);
+        return new MovimientoInventario(
+                this,
+                TipoMovimientoInventario.LIBERACION,
+                cant,
+                getStockDisponible(),
+                LocalDateTime.now(),
+                reservaId,
+                usuarioId
+        );
     }
 
-    public void descontar(int cant) {
+    public MovimientoInventario descontarStockPorEntrega(int cant, Long entregaId, boolean vieneDeReserva, Long usuarioId) {
+        if (cant <= 0) {
+            throw new IllegalArgumentException("La cantidad a descontar debe ser mayor a cero.");
+        }
         if (cant > this.stockFisico) {
             throw new IllegalStateException("Stock físico insuficiente para descontar.");
         }
+        if (!vieneDeReserva && cant > getStockDisponible()) {
+            throw new IllegalStateException("Stock disponible insuficiente para venta directa.");
+        }
         this.stockFisico -= cant;
-        this.stockReservado = Math.max(0, this.stockReservado - cant);
+        if (vieneDeReserva) {
+            this.stockReservado = Math.max(0, this.stockReservado - cant);
+        }
+        return new MovimientoInventario(
+                this,
+                TipoMovimientoInventario.ENTREGA,
+                cant,
+                this.stockFisico,
+                LocalDateTime.now(),
+                entregaId,
+                usuarioId
+        );
     }
 
-    public void reponer(int cant) {
+    public MovimientoInventario reponerStockPorDevolucion(int cant, Long devolucionId, Long usuarioId) {
+        if (cant <= 0) {
+            throw new IllegalArgumentException("La cantidad a reponer debe ser mayor a cero.");
+        }
         this.stockFisico += cant;
+        return new MovimientoInventario(
+                this,
+                TipoMovimientoInventario.DEVOLUCION,
+                cant,
+                this.stockFisico,
+                LocalDateTime.now(),
+                devolucionId,
+                usuarioId
+        );
     }
 
-    // Invariante de cálculo de CPP con IVA incluido (HU51)
-    public void registrarEntrada(int cant, Long costoConIva) {
-        if (cant <= 0) return;
-        long costoStockActual = (long) this.stockFisico * this.cpp;
-        long costoStockNuevo = (long) cant * costoConIva;
-        int nuevoStockFisico = this.stockFisico + cant;
-
-        this.cpp = Math.round((double)(costoStockActual + costoStockNuevo) / nuevoStockFisico);
-        this.stockFisico = nuevoStockFisico;
-    }
-
-    // Ajuste de stock autorizado (segunda firma HU45)
-    public void ajustarStock(int cantAjuste) {
-        int nuevoFisico = this.stockFisico + cantAjuste;
-        if (nuevoFisico < 0 || (nuevoFisico - this.stockReservado) < 0) {
-            throw new IllegalStateException("El ajuste dejaría el stock en negativo.");
+    public MovimientoInventario aplicarAjusteAprobado(int cant, Long solicitudId, Long adminId) {
+        if (cant == 0) {
+            throw new IllegalArgumentException("La cantidad del ajuste no puede ser cero.");
+        }
+        int nuevoFisico = this.stockFisico + cant;
+        if (nuevoFisico < 0) {
+            throw new IllegalStateException("El ajuste dejaría el stock físico en negativo.");
+        }
+        if (nuevoFisico - this.stockReservado < 0) {
+            throw new IllegalStateException("El ajuste dejaría el stock disponible en negativo.");
         }
         this.stockFisico = nuevoFisico;
+        return new MovimientoInventario(
+                this,
+                TipoMovimientoInventario.AJUSTE,
+                Math.abs(cant),
+                this.stockFisico,
+                LocalDateTime.now(),
+                solicitudId,
+                adminId
+        );
+    }
+
+    public void editar(String nombre, String descripcion, String imagenUrl, String cursoNivel, int precio, int stockCritico, Categoria categoria) {
+        this.nombre = nombre;
+        this.descripcion = descripcion;
+        this.imagenUrl = imagenUrl;
+        this.cursoNivel = cursoNivel;
+        this.precio = precio;
+        this.stockCritico = stockCritico;
+        if (categoria != null) {
+            this.categoria = categoria;
+        }
+    }
+
+    public void activar() {
+        this.estado = EstadoRegistro.ACTIVO;
+    }
+
+    public void inactivar() {
+        this.estado = EstadoRegistro.INACTIVO;
     }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
     public Categoria getCategoria() { return categoria; }
+    public void setCategoria(Categoria categoria) { this.categoria = categoria; }
     public String getSku() { return sku; }
-    public String getCodigoBarras() { return codigoBarras; }
+    public void setSku(String sku) { this.sku = sku; }
     public String getNombre() { return nombre; }
+    public void setNombre(String nombre) { this.nombre = nombre; }
     public String getDescripcion() { return descripcion; }
     public void setDescripcion(String descripcion) { this.descripcion = descripcion; }
     public String getImagenUrl() { return imagenUrl; }
     public void setImagenUrl(String imagenUrl) { this.imagenUrl = imagenUrl; }
     public String getCursoNivel() { return cursoNivel; }
-    public String getMateria() { return materia; }
-    public Long getPrecioVenta() { return precioVenta; }
-    public void setPrecioVenta(Long precioVenta) { this.precioVenta = precioVenta; }
-    public BigDecimal getMargenUtilidad() { return margenUtilidad; }
-    public Long getCpp() { return cpp; }
+    public void setCursoNivel(String cursoNivel) { this.cursoNivel = cursoNivel; }
+    public int getPrecio() { return precio; }
+    public void setPrecio(int precio) { this.precio = precio; }
     public int getStockFisico() { return stockFisico; }
+    public void setStockFisico(int stockFisico) { this.stockFisico = stockFisico; }
     public int getStockReservado() { return stockReservado; }
+    public void setStockReservado(int stockReservado) { this.stockReservado = stockReservado; }
     public int getStockCritico() { return stockCritico; }
+    public void setStockCritico(int stockCritico) { this.stockCritico = stockCritico; }
     public EstadoRegistro getEstado() { return estado; }
+    public void setEstado(EstadoRegistro estado) { this.estado = estado; }
 }

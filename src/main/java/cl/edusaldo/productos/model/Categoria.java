@@ -28,8 +28,18 @@ public class Categoria {
         this.estado = EstadoRegistro.ACTIVO;
     }
 
-    public void activar() { this.estado = EstadoRegistro.ACTIVO; }
-    public void inactivar() { this.estado = EstadoRegistro.INACTIVO; }
+    public void editar(String nombre, String descripcion) {
+        this.nombre = nombre;
+        this.descripcion = descripcion;
+    }
+
+    public void activar() { 
+        this.estado = EstadoRegistro.ACTIVO; 
+    }
+
+    public void inactivar() { 
+        this.estado = EstadoRegistro.INACTIVO; 
+    }
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }

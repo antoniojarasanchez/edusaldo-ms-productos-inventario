@@ -1,13 +1,8 @@
 package cl.edusaldo.productos;
 
-import cl.edusaldo.productos.dto.AprobarAjusteDTO;
-import cl.edusaldo.productos.dto.EntradaCompraDTO;
-import cl.edusaldo.productos.dto.ReservarStockDTO;
-import cl.edusaldo.productos.dto.SolicitarAjusteDTO;
+import cl.edusaldo.productos.dto.*;
 import cl.edusaldo.productos.model.*;
-import cl.edusaldo.productos.repository.MovimientoInventarioRepository;
-import cl.edusaldo.productos.repository.ProductoRepository;
-import cl.edusaldo.productos.repository.SolicitudAjusteStockRepository;
+import cl.edusaldo.productos.repository.*;
 import cl.edusaldo.productos.service.InventarioService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -35,6 +31,9 @@ class InventarioServiceTest {
     @Mock
     private SolicitudAjusteStockRepository solicitudAjusteStockRepository;
 
+    @Mock
+    private IngresoStockRepository ingresoStockRepository;
+
     @InjectMocks
     private InventarioService inventarioService;
 
@@ -46,101 +45,144 @@ class InventarioServiceTest {
         categoriaPrueba = new Categoria("Cuadernos", "Cuadernos escolares");
         categoriaPrueba.setId(1L);
 
-        // Producto inicial: 10 unidades físicas, 0 reservadas, CPP $1.000
+        // Producto inicial: 10 unidades físicas, 0 reservadas, stock crítico = 5, precio = $1.250 CLP
         productoPrueba = new Producto(
-                categoriaPrueba, "CUAD-UNI-01", "7800000000101", "Cuaderno universitario",
-                "Todos", "General", 1250L, 1000L, 10, 5
+                categoriaPrueba, "CUAD-UNI-01", "Cuaderno universitario", "Cuaderno espiral 100 hojas",
+                "http://img.jpg", "Todos", 1250, 10, 5
         );
-        productoPrueba.setId(101L);
+        productoPrueba.setId(1L);
     }
 
     @Test
-    @DisplayName("1. Rechazo de reserva por stock insuficiente (Invariante HU41)")
+    @DisplayName("1. Ingreso manual de mercadería por Encargado (HU46) actualiza stock físico y genera trazabilidad")
+    void testIngresoManualMercaderia() {
+        when(productoRepository.findById(1L)).thenReturn(Optional.of(productoPrueba));
+        when(ingresoStockRepository.save(any(IngresoStock.class))).thenAnswer(i -> {
+            IngresoStock ing = i.getArgument(0);
+            ing.setId(10L);
+            return ing;
+        });
+
+        IngresoManualDTO dto = new IngresoManualDTO();
+        dto.setEncargadoId(2L);
+        dto.setProveedor("Distribuidora Escolar Central");
+        dto.setDocumentoReferencia("GUIA-DESPACHO-4581");
+        dto.setObservacion("Recepción de cuadernos para inicio de semestre");
+        dto.setDetalles(List.of(new DetalleIngresoDTO(1L, 25)));
+
+        IngresoStock resultado = inventarioService.registrarIngresoManual(dto);
+
+        assertNotNull(resultado);
+        assertEquals(35, productoPrueba.getStockFisico()); // 10 inicial + 25
+        assertEquals(35, productoPrueba.getStockDisponible());
+        verify(productoRepository).save(productoPrueba);
+        verify(movimientoInventarioRepository).save(any(MovimientoInventario.class));
+    }
+
+    @Test
+    @DisplayName("2. Invariante de Reserva: Rechazo controlado cuando la solicitud supera el stock disponible (HU41)")
     void testRechazoReservaStockInsuficiente() {
-        when(productoRepository.findById(101L)).thenReturn(Optional.of(productoPrueba));
-        when(movimientoInventarioRepository.existsByIdempotencyKey("KEY-INV-01")).thenReturn(false);
+        when(productoRepository.findById(1L)).thenReturn(Optional.of(productoPrueba));
 
-        ReservarStockDTO dto = new ReservarStockDTO();
-        dto.setCantidad(15); // Mayor que stock disponible de 10
-        dto.setReferenciaId(1L);
-        dto.setUsuarioId(4L);
-        dto.setIdempotencyKey("KEY-INV-01");
+        RetenerStockDTO dto = new RetenerStockDTO(1L, 15, 101L, 4L); // 15 > 10 disponible
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> inventarioService.reservar(101L, dto));
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () ->
+                inventarioService.retenerStock(dto)
+        );
         assertTrue(ex.getMessage().contains("Stock insuficiente"));
         assertEquals(10, productoPrueba.getStockFisico());
         assertEquals(0, productoPrueba.getStockReservado());
         assertEquals(10, productoPrueba.getStockDisponible());
+        verify(movimientoInventarioRepository, never()).save(any());
     }
 
     @Test
-    @DisplayName("2. Recálculo aritmético exacto de CPP con IVA incluido (Regla HU51)")
-    void testCalculoMatematicoCppConIva() {
-        // Inicial: 10 unidades con CPP $1.000 (Costo total $10.000)
-        assertEquals(1000L, productoPrueba.getCpp());
+    @DisplayName("3. Solicitud de ajuste de stock por Encargado queda en PENDIENTE sin alterar stock (HU45)")
+    void testSolicitudAjusteNoAlteraStock() {
+        when(productoRepository.findById(1L)).thenReturn(Optional.of(productoPrueba));
+        when(solicitudAjusteStockRepository.save(any(SolicitudAjusteStock.class))).thenAnswer(i -> {
+            SolicitudAjusteStock s = i.getArgument(0);
+            s.setId(50L);
+            return s;
+        });
+
+        SolicitarAjusteDTO dto = new SolicitarAjusteDTO(1L, -3, "Merma por daño de agua", 2L);
+        SolicitudAjusteStock solicitud = inventarioService.solicitarAjuste(dto);
+
+        assertNotNull(solicitud);
+        assertEquals(EstadoSolicitud.PENDIENTE, solicitud.getEstado());
+        assertEquals(-3, solicitud.getCantidad());
+        assertEquals(2L, solicitud.getEncargadoId());
+        // El stock inicial NO muta
         assertEquals(10, productoPrueba.getStockFisico());
-
-        when(productoRepository.findById(101L)).thenReturn(Optional.of(productoPrueba));
-        when(movimientoInventarioRepository.existsByIdempotencyKey("KEY-BUY-01")).thenReturn(false);
-        when(productoRepository.save(any(Producto.class))).thenAnswer(i -> i.getArgument(0));
-
-        // Entrada nueva de compras: 10 unidades con costo facturado con IVA $1.200 (Total nuevo $12.000)
-        EntradaCompraDTO dto = new EntradaCompraDTO();
-        dto.setCantidad(10);
-        dto.setCostoUnitarioConIva(1200L);
-        dto.setRecepcionId(501L);
-        dto.setUsuarioId(2L);
-        dto.setIdempotencyKey("KEY-BUY-01");
-
-        inventarioService.registrarEntradaCompra(101L, dto);
-
-        // Aserción matemática: (10.000 + 12.000) / 20 = $1.100 exacto
-        assertEquals(1100L, productoPrueba.getCpp());
-        assertEquals(20, productoPrueba.getStockFisico());
-        assertEquals(20, productoPrueba.getStockDisponible());
+        assertEquals(10, productoPrueba.getStockDisponible());
     }
 
     @Test
-    @DisplayName("3. Doble firma: Solicitud de ajuste no muta stock hasta que el Autorizador aprueba (HU45)")
-    void testAjusteStockProtegidoSinSegundaFirma() {
-        SolicitudAjusteStock solicitud = new SolicitudAjusteStock(
-                productoPrueba, -3, "Merma por caída de líquido", "http://evidencia.jpg", 1L, null
-        );
-        solicitud.setId(201L);
+    @DisplayName("4. Aprobación exclusiva por Administrador impacta stock físico y genera MovimientoInventario AJUSTE (HU45)")
+    void testAprobacionAjustePorAdmin() {
+        SolicitudAjusteStock solicitud = new SolicitudAjusteStock(productoPrueba, -2, "Merma autorizada", 2L);
+        solicitud.setId(51L);
 
-        when(solicitudAjusteStockRepository.findById(201L)).thenReturn(Optional.of(solicitud));
+        when(solicitudAjusteStockRepository.findById(51L)).thenReturn(Optional.of(solicitud));
         when(solicitudAjusteStockRepository.save(any(SolicitudAjusteStock.class))).thenAnswer(i -> i.getArgument(0));
 
-        // El stock inicial sigue en 10 antes de la firma
+        AprobarAjusteDTO dto = new AprobarAjusteDTO(1L); // Administrador ID 1
+        SolicitudAjusteStock resuelta = inventarioService.aprobarAjuste(51L, dto);
+
+        assertEquals(EstadoSolicitud.APROBADA, resuelta.getEstado());
+        assertEquals(1L, resuelta.getAdministradorId());
+        assertNotNull(resuelta.getFechaResolucion());
+        assertEquals(8, productoPrueba.getStockFisico()); // 10 - 2 = 8
+        assertEquals(8, productoPrueba.getStockDisponible());
+        verify(productoRepository).save(productoPrueba);
+        verify(movimientoInventarioRepository).save(any(MovimientoInventario.class));
+    }
+
+    @Test
+    @DisplayName("5. Rechazo exclusivo por Administrador con motivo no modifica el stock físico (HU45)")
+    void testRechazoAjustePorAdmin() {
+        SolicitudAjusteStock solicitud = new SolicitudAjusteStock(productoPrueba, -2, "Merma dudosa", 2L);
+        solicitud.setId(52L);
+
+        when(solicitudAjusteStockRepository.findById(52L)).thenReturn(Optional.of(solicitud));
+        when(solicitudAjusteStockRepository.save(any(SolicitudAjusteStock.class))).thenAnswer(i -> i.getArgument(0));
+
+        RechazarAjusteDTO dto = new RechazarAjusteDTO(1L, "Evidencia fotográfica no corresponde al lote");
+        SolicitudAjusteStock resuelta = inventarioService.rechazarAjuste(52L, dto);
+
+        assertEquals(EstadoSolicitud.RECHAZADA, resuelta.getEstado());
+        assertEquals(1L, resuelta.getAdministradorId());
+        assertEquals("Evidencia fotográfica no corresponde al lote", resuelta.getMotivoRechazo());
+        assertEquals(10, productoPrueba.getStockFisico()); // Stock NO modificado
+        verify(productoRepository, never()).save(any());
+        verify(movimientoInventarioRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("6. Ciclo de retención, liberación y descuento formal de stock")
+    void testFlujoCompletoRetenerLiberarDescontar() {
+        when(productoRepository.findById(1L)).thenReturn(Optional.of(productoPrueba));
+
+        // Paso A: Retener 4 unidades
+        RetenerStockDTO dtoRetener = new RetenerStockDTO(1L, 4, 201L, 3L);
+        inventarioService.retenerStock(dtoRetener);
         assertEquals(10, productoPrueba.getStockFisico());
+        assertEquals(4, productoPrueba.getStockReservado());
+        assertEquals(6, productoPrueba.getStockDisponible());
 
-        // Autorizador rechaza el ajuste
-        AprobarAjusteDTO dtoRechazo = new AprobarAjusteDTO();
-        dtoRechazo.setAutorizadorId(3L);
-        dtoRechazo.setAprobada(false);
-        dtoRechazo.setComentario("Evidencia insuficiente");
+        // Paso B: Liberar 1 unidad
+        LiberarStockDTO dtoLiberar = new LiberarStockDTO(1L, 1, 201L, 3L);
+        inventarioService.liberarStock(dtoLiberar);
+        assertEquals(10, productoPrueba.getStockFisico());
+        assertEquals(3, productoPrueba.getStockReservado());
+        assertEquals(7, productoPrueba.getStockDisponible());
 
-        inventarioService.autorizarAjuste(201L, dtoRechazo);
-
-        assertEquals(EstadoAutorizacion.RECHAZADA, solicitud.getEstado());
-        assertEquals(10, productoPrueba.getStockFisico()); // Stock NO fue alterado
-
-        // Caso alternativo: Autorizador aprueba
-        SolicitudAjusteStock solicitud2 = new SolicitudAjusteStock(
-                productoPrueba, -3, "Merma comprobada", "http://evidencia2.jpg", 1L, null
-        );
-        solicitud2.setId(202L);
-
-        when(solicitudAjusteStockRepository.findById(202L)).thenReturn(Optional.of(solicitud2));
-        when(productoRepository.save(any(Producto.class))).thenAnswer(i -> i.getArgument(0));
-
-        AprobarAjusteDTO dtoAprobado = new AprobarAjusteDTO();
-        dtoAprobado.setAutorizadorId(3L);
-        dtoAprobado.setAprobada(true);
-
-        inventarioService.autorizarAjuste(202L, dtoAprobado);
-
-        assertEquals(EstadoAutorizacion.APROBADA, solicitud2.getEstado());
-        assertEquals(7, productoPrueba.getStockFisico()); // Stock descontado en 3 tras segunda firma
+        // Paso C: Descontar las 3 restantes por entrega
+        DescontarStockDTO dtoDescontar = new DescontarStockDTO(1L, 3, 301L, true, 2L);
+        inventarioService.descontarStock(dtoDescontar);
+        assertEquals(7, productoPrueba.getStockFisico());
+        assertEquals(0, productoPrueba.getStockReservado());
+        assertEquals(7, productoPrueba.getStockDisponible());
     }
 }
